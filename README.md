@@ -53,4 +53,4 @@ curl -sSL https://raw.githubusercontent.com/ypq123456789/traffmonetizer-fix/main
 * 本方案仅适用于 **Linux x86_64** 架构。
 * 如果遇到 `sudo: unable to resolve host` 报错，请检查 `/etc/hosts` 是否配置了正确的主机名。
 
-```
+
