@@ -63,4 +63,4 @@ curl -sSL https://raw.githubusercontent.com/ypq123456789/traffmonetizer-fix/main
 
 ---
 
-**如果你觉得这个项目帮到了你，欢迎使用我的 AFF 链接注册支持：[https://traffmonetizer.com/?aff=1012745**](https://traffmonetizer.com/?aff=1012745)
+**如果你觉得这个项目帮到了你，欢迎使用我的 AFF 链接注册支持：[https://traffmonetizer.com/?aff=1012745**](https://traffmonetizer.com/?aff=1012745)**
