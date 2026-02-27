@@ -62,5 +62,4 @@ curl -sSL https://raw.githubusercontent.com/ypq123456789/traffmonetizer-fix/main
 * **Host 报错**: 若提示 `sudo: unable to resolve host`，请使用 `nano /etc/hosts` 添加 `127.0.1.1 你的主机名`。
 
 ---
-
-**如果你觉得这个项目帮到了你，欢迎使用我的 AFF 链接注册支持：[https://traffmonetizer.com/?aff=1012745**](https://traffmonetizer.com/?aff=1012745)**
+如果你觉得这个项目帮到了你，欢迎使用我的 AFF 链接注册支持：[https://traffmonetizer.com/?aff=1012745](https://traffmonetizer.com/?aff=1012745) 
