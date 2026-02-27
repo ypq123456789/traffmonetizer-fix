@@ -1,52 +1,56 @@
 #!/bin/bash
 
 # =================================================================
-# 脚本名称: deploy_tm.sh
-# 功能: 从 GitHub 下载修复版 tm_cli 并后台运行
+# 脚本名称: setup_tm_service.sh
+# 功能: 下载 tm_cli 并配置为 systemd 服务（开机自启+自动重启）
+# 使用方法: sudo bash setup_tm_service.sh <你的Token>
 # =================================================================
 
-# 配置变量
+TOKEN=$1
+
+if [ -z "$TOKEN" ]; then
+    echo "错误: 请提供 Token 参数。"
+    echo "用法: sudo bash $0 <你的Token>"
+    exit 1
+fi
+
+# 变量定义
+SERVICE_NAME="traffmonetizer"
+BIN_PATH="/usr/local/bin/tm_cli"
 REPO_URL="https://raw.githubusercontent.com/ypq123456789/traffmonetizer-fix/main/tm_cli"
-LOCAL_BIN="./tm_cli"
-LOG_FILE="./tm_cli.log"
 
-# 获取传入的参数 (Token等)
-ARGS=$@
+echo "--- [1/3] 正在下载二进制文件到 $BIN_PATH ---"
+curl -L -o $BIN_PATH $REPO_URL
+chmod +x $BIN_PATH
 
-if [ -z "$ARGS" ]; then
-    echo "错误: 请输入启动参数（例如 --token ...）"
-    exit 1
-fi
+echo "--- [2/3] 正在创建 systemd 服务配置 ---"
+cat <<EOF > /etc/systemd/system/${SERVICE_NAME}.service
+[Unit]
+Description=TraffMonetizer Fix Service
+After=network.target
 
-# 1. 检查并停止已有的进程
-echo "--- [1/3] 检查旧进程 ---"
-PID=$(pgrep -f "tm_cli")
-if [ -n "$PID" ]; then
-    echo "停止正在运行的旧进程: $PID"
-    kill -9 $PID
-fi
+[Service]
+Type=simple
+# 执行命令：包含 start accept 和传入的 token
+ExecStart=${BIN_PATH} start accept --token "${TOKEN}"
+# 失败后自动重启
+Restart=always
+# 重启间隔时间（5秒）
+RestartSec=5
+# 运行日志输出到 syslog
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=tm_cli
 
-# 2. 下载二进制文件 (如果本地不存在)
-echo "--- [2/3] 正在从 GitHub 获取二进制文件 ---"
-curl -L -o $LOCAL_BIN $REPO_URL
+[Install]
+WantedBy=multi-user.target
+EOF
 
-if [ $? -ne 0 ]; then
-    echo "下载失败，请检查网络或 GitHub 链接。"
-    exit 1
-fi
+echo "--- [3/3] 正在启动服务并设置开机自启 ---"
+systemctl daemon-reload
+systemctl enable ${SERVICE_NAME}
+systemctl restart ${SERVICE_NAME}
 
-chmod +x $LOCAL_BIN
-
-# 3. 启动程序
-echo "--- [3/3] 正在后台启动 tm_cli ---"
-# 使用 nohup 保证退出终端后继续运行
-nohup $LOCAL_BIN start accept $ARGS > $LOG_FILE 2>&1 &
-
+# 检查状态
 sleep 2
-if ps -p $! > /dev/null; then
-    echo "启动成功！"
-    echo "运行参数: start accept $ARGS"
-    echo "查看日志命令: tail -f $LOG_FILE"
-else
-    echo "启动失败，请检查 $LOG_FILE"
-fi
+systemctl status ${SERVICE_NAME} --no-pager
