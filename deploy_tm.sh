@@ -2,7 +2,7 @@
 
 # =================================================================
 # 脚本名称: deploy_tm_auto.sh
-# 功能: 下载 tm_cli 并自动识别系统服务管理器（Systemd 或 OpenRC），配置开机自启
+# 功能: 自动检测架构下载 tm_cli 并识别服务管理器（Systemd/OpenRC）配置开机自启
 # 使用方法: sudo bash deploy_tm_auto.sh <你的Token>
 # =================================================================
 
@@ -16,7 +16,21 @@ fi
 
 SERVICE_NAME="traffmonetizer"
 BIN_PATH="/usr/local/bin/tm_cli"
-REPO_URL="https://raw.githubusercontent.com/ypq123456789/traffmonetizer-fix/main/tm_cli"
+
+# 自动检测系统架构并分配对应的下载链接
+ARCH=$(uname -m)
+if [ "$ARCH" = "x86_64" ] || [ "$ARCH" = "amd64" ]; then
+    REPO_URL="https://raw.githubusercontent.com/ypq123456789/traffmonetizer-fix/main/tm_cli"
+    echo "👉 检测到 $ARCH 架构，准备下载 AMD64 版本..."
+elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+    # 此处假设仓库中 aarch64 版本的二进制文件名为 tm_cli_aarch64。
+    # 如果原作者使用了其他命名规则，请手动修改此处的链接后缀。
+    REPO_URL="https://raw.githubusercontent.com/ypq123456789/traffmonetizer-fix/main/tm_cli_aarch64"
+    echo "👉 检测到 $ARCH 架构，准备下载 ARM64 版本..."
+else
+    echo "❌ 错误: 暂不支持当前的系统架构 ($ARCH)。"
+    exit 1
+fi
 
 echo "--- [1/3] 正在检查依赖并下载二进制文件到 $BIN_PATH ---"
 # 自动检测包管理器并安装 curl
@@ -36,6 +50,14 @@ fi
 
 # 下载二进制文件
 curl -L -o $BIN_PATH $REPO_URL
+
+# 校验文件是否下载成功（防止仓库中没有对应的 ARM64 文件导致下载到 404 页面）
+if [ ! -s "$BIN_PATH" ] || grep -q "404: Not Found" "$BIN_PATH"; then
+    echo "❌ 错误: 从 $REPO_URL 下载二进制文件失败，文件可能不存在。"
+    rm -f $BIN_PATH
+    exit 1
+fi
+
 chmod +x $BIN_PATH
 
 echo "--- [2/3] 正在识别系统服务管理器并创建配置 ---"
