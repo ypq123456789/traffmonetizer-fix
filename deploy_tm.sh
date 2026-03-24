@@ -1,134 +1,91 @@
 #!/bin/bash
 
 # =================================================================
-# 脚本名称: deploy_tm_auto.sh
-# 功能: 自动检测架构下载 tm_cli 并识别服务管理器（Systemd/OpenRC）配置开机自启
-# 使用方法: sudo bash deploy_tm_auto.sh <你的Token>
+# 脚本名称: deploy_arm_qemu.sh
+# 功能: 解决 Traffmonetizer 官方 ARM 架构支持失效及 LXC 容器内核限制问题
+# 原理: 下载 AMD64 二进制文件，利用 qemu-user-static 在 ARM64 上强制转译运行
+# 项目地址: https://github.com/ypq123456789/traffmonetizer-fix
 # =================================================================
 
 TOKEN=$1
 
 if [ -z "$TOKEN" ]; then
-    echo "错误: 请提供 Token 参数。"
+    echo "❌ 错误: 请提供 Token 参数。"
     echo "用法: sudo bash $0 <你的Token>"
     exit 1
 fi
 
-SERVICE_NAME="traffmonetizer"
-BIN_PATH="/usr/local/bin/tm_cli"
+SERVICE_NAME="traffmonetizer-qemu"
+BIN_PATH="/usr/local/bin/tm_cli_x86_64"
+REPO_URL="https://raw.githubusercontent.com/ypq123456789/traffmonetizer-fix/main/tm_cli"
 
-# 自动检测系统架构并分配对应的下载链接
-ARCH=$(uname -m)
-if [ "$ARCH" = "x86_64" ] || [ "$ARCH" = "amd64" ]; then
-    REPO_URL="https://raw.githubusercontent.com/ypq123456789/traffmonetizer-fix/main/tm_cli"
-    echo "👉 检测到 $ARCH 架构，准备下载 AMD64 版本..."
-elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
-    # 此处假设仓库中 aarch64 版本的二进制文件名为 tm_cli_aarch64。
-    # 如果原作者使用了其他命名规则，请手动修改此处的链接后缀。
-    REPO_URL="https://raw.githubusercontent.com/ypq123456789/traffmonetizer-fix/main/tm_cli_aarch64"
-    echo "👉 检测到 $ARCH 架构，准备下载 ARM64 版本..."
+echo "--- [1/4] 正在安装基础依赖和 QEMU 静态转译器 ---"
+if command -v apt-get >/dev/null 2>&1; then
+    apt-get update -y
+    apt-get install -y curl qemu-user-static
+elif command -v yum >/dev/null 2>&1; then
+    yum install -y curl epel-release
+    yum install -y qemu-user-static
+elif command -v apk >/dev/null 2>&1; then
+    apk update
+    apk add curl qemu-aarch64 qemu-x86_64
 else
-    echo "❌ 错误: 暂不支持当前的系统架构 ($ARCH)。"
+    echo "❌ 无法自动安装 qemu-user-static，请检查您的包管理器。"
     exit 1
 fi
 
-echo "--- [1/3] 正在检查依赖并下载二进制文件到 $BIN_PATH ---"
-# 自动检测包管理器并安装 curl
-if ! command -v curl >/dev/null 2>&1; then
-    echo "正在安装 curl..."
-    if command -v apt-get >/dev/null 2>&1; then
-        apt-get update && apt-get install -y curl
-    elif command -v yum >/dev/null 2>&1; then
-        yum install -y curl
-    elif command -v apk >/dev/null 2>&1; then
-        apk add --no-cache curl
-    else
-        echo "无法自动安装 curl，请手动安装后重试。"
-        exit 1
-    fi
+# 检查 QEMU 是否成功安装
+if ! command -v qemu-x86_64-static >/dev/null 2>&1 && ! command -v qemu-x86_64 >/dev/null 2>&1; then
+    echo "❌ QEMU 转译器安装失败，程序无法继续。"
+    exit 1
 fi
 
-# 下载二进制文件
-curl -L -o $BIN_PATH $REPO_URL
+# 统一获取 QEMU 命令路径
+QEMU_CMD=$(command -v qemu-x86_64-static || command -v qemu-x86_64)
 
-# 校验文件是否下载成功（防止仓库中没有对应的 ARM64 文件导致下载到 404 页面）
+echo "--- [2/4] 正在下载 AMD64 客户端核心文件 ---"
+curl -sSL -o $BIN_PATH $REPO_URL
+
 if [ ! -s "$BIN_PATH" ] || grep -q "404: Not Found" "$BIN_PATH"; then
-    echo "❌ 错误: 从 $REPO_URL 下载二进制文件失败，文件可能不存在。"
+    echo "❌ 错误: 从仓库下载二进制文件失败。"
     rm -f $BIN_PATH
     exit 1
 fi
 
 chmod +x $BIN_PATH
 
-echo "--- [2/3] 正在识别系统服务管理器并创建配置 ---"
-
-# 判断是否为 Systemd 环境
+echo "--- [3/4] 正在配置 Systemd 后台守护服务 ---"
 if command -v systemctl >/dev/null 2>&1; then
-    echo "✅ 检测到 Systemd 服务管理器 (适用于 Ubuntu/Debian/CentOS 等主流系统)"
     cat <<EOF > /etc/systemd/system/${SERVICE_NAME}.service
 [Unit]
-Description=TraffMonetizer Fix Service
+Description=TraffMonetizer QEMU Translated Service (ARM64 fix)
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=${BIN_PATH} start accept --token "${TOKEN}"
+# 显式调用 QEMU 翻译器包载运行 AMD64 程序，绕过 LXC 内核 binfmt 限制
+ExecStart=${QEMU_CMD} ${BIN_PATH} start accept --token "${TOKEN}"
 Restart=always
 RestartSec=5
-StandardOutput=append:/var/log/tm_cli.log
-StandardError=append:/var/log/tm_cli.err
+StandardOutput=append:/var/log/tm_qemu.log
+StandardError=append:/var/log/tm_qemu.err
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-    echo "--- [3/3] 正在启动服务并设置开机自启 ---"
+    echo "--- [4/4] 正在启动服务并设置开机自启 ---"
     systemctl daemon-reload
     systemctl enable ${SERVICE_NAME}
     systemctl restart ${SERVICE_NAME}
     
     sleep 2
     systemctl status ${SERVICE_NAME} --no-pager
-
-# 判断是否为 OpenRC 环境
-elif command -v rc-update >/dev/null 2>&1; then
-    echo "✅ 检测到 OpenRC 服务管理器 (适用于 Alpine Linux 等轻量系统)"
-    cat <<EOF > /etc/init.d/${SERVICE_NAME}
-#!/sbin/openrc-run
-
-name="TraffMonetizer Fix Service"
-description="TraffMonetizer client background service"
-
-command="${BIN_PATH}"
-command_args="start accept --token \"${TOKEN}\""
-command_background="yes"
-pidfile="/run/\${RC_SVCNAME}.pid"
-
-supervisor="supervise-daemon"
-respawn_delay="5"
-respawn_max="0"
-
-output_log="/var/log/tm_cli.log"
-error_log="/var/log/tm_cli.err"
-
-depend() {
-    need net
-}
-EOF
-
-    chmod +x /etc/init.d/${SERVICE_NAME}
-
-    echo "--- [3/3] 正在启动服务并设置开机自启 ---"
-    rc-update add ${SERVICE_NAME} default
-    rc-service ${SERVICE_NAME} restart
-    
-    sleep 2
-    rc-service ${SERVICE_NAME} status
+    echo "✅ 部署完毕！QEMU 跨架构挂机服务已在后台运行。"
 
 else
-    echo "❌ 错误: 未检测到受支持的服务管理器 (Systemd 或 OpenRC)。"
-    echo "如果您使用的是非常规系统，请优先使用 nano 自行编写进程守护配置文件。"
+    echo "❌ 错误: 未检测到 Systemd 服务管理器。"
+    echo "请手动使用以下命令在前台运行或自行编写守护进程："
+    echo "${QEMU_CMD} ${BIN_PATH} start accept --token \"${TOKEN}\""
     exit 1
 fi
-
-echo "部署流程执行完毕！"
