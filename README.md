@@ -68,4 +68,4 @@ curl -sSL https://raw.githubusercontent.com/ypq123456789/traffmonetizer-fix/main
 
 ---
 💖 如果你觉得这个开源项目完美解决你的挂机痛点，欢迎使用我的 AFF 链接注册支持：[https://traffmonetizer.com/?aff=1012745](https://traffmonetizer.com/?aff=1012745)
-```
+
